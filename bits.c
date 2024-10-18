@@ -283,7 +283,26 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned floatScale2(unsigned uf) {
-  return 2;
+  unsigned sign_bit = uf >> 31;
+  unsigned exp_bits = (uf >> 23) & 0xff;
+  unsigned frac_bits = uf & 0x7fffff;
+  if (exp_bits == 0xff) {
+    // infinite or NaN
+    return uf;
+  } else if (exp_bits == 0xfe) {
+    // overflow
+    return sign_bit << 31 | 0xff << 23;
+  } else if (exp_bits == 0) {
+    // denormalized number
+    // unsigned frac_bits_highest = frac_bits >> 22;
+    // if (frac_bits_highest == 1) {
+    //   exp_bits = 1;
+    // }
+    frac_bits <<= 1;
+  } else {
+    exp_bits += 1;
+  }
+  return sign_bit << 31 | exp_bits << 23 | frac_bits;
 }
 /* 
  * floatFloat2Int - Return bit-level equivalent of expression (int) f
@@ -298,7 +317,42 @@ unsigned floatScale2(unsigned uf) {
  *   Rating: 4
  */
 int floatFloat2Int(unsigned uf) {
-  return 2;
+  unsigned sign_bit = uf >> 31;
+  unsigned exp_bits = (uf >> 23) & 0xff;
+  unsigned frac_bits = uf & 0x7fffff;
+  unsigned one_dot_frac = frac_bits | 1 << 23;
+  unsigned bias = (1 << 7) - 1;
+  int res;
+  // inifite or NaN
+  if (exp_bits == 0xff) {
+    return 0x80000000u;
+  }
+
+  // abs < 1
+  if (exp_bits < bias) {
+    return 0x0u;
+  }
+
+  unsigned exp_val = exp_bits - bias;
+
+  // overflow
+  if (exp_val > 31) {
+    return 0x80000000u;
+  }
+
+  // 1.frac 24 bit
+  if (exp_val < 23) {
+    // round frac_bits, discard 23 - exp_val right bit
+    res = one_dot_frac >> (23 - exp_val);
+  } else {
+    res = one_dot_frac << (exp_val - 23);
+  }
+
+  if (sign_bit) {
+    return -res;
+  }
+
+  return res;
 }
 /* 
  * floatPower2 - Return bit-level equivalent of the expression 2.0^x
@@ -314,5 +368,16 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+    int bias = (1 << 7) - 1;
+    int min_exp_val = - bias;
+    int max_exp_val = 0xff - bias;
+
+    if (x < min_exp_val) {
+      return 0x0u;
+    } else if (x > max_exp_val) {
+      return 0x7f800000u;
+    }
+
+    unsigned exp_bits = x + bias;
+    return exp_bits << 23;
 }
